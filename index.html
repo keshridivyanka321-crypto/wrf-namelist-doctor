@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WRF Namelist Doctor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: two panes. Left = namelist editor, right = findings + domain table. Stacks on phones. */
+:root{
+  --bg:#f3f6f5; --panel:#ffffff; --ink:#13201e; --muted:#5a6b68; --line:#d5dfdc;
+  --accent:#0b6e6e; --accent-ink:#ffffff;
+  --err:#b3261e; --err-bg:#fbeceb; --warn:#8f5b00; --warn-bg:#fcf3df; --ok:#1b7a3d; --ok-bg:#e6f4ea; --info:#2f5f9e; --info-bg:#e8f0fa;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace; --sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1514; --panel:#161f1e; --ink:#e3eeec; --muted:#8fa4a0; --line:#2a3836;
+    --accent:#3fbdb4; --accent-ink:#06201e;
+    --err:#ff8a80; --err-bg:#3a1b19; --warn:#f0b955; --warn-bg:#352a10; --ok:#6fd48f; --ok-bg:#15301f; --info:#8db8f0; --info-bg:#172a42;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1514; --panel:#161f1e; --ink:#e3eeec; --muted:#8fa4a0; --line:#2a3836;
+  --accent:#3fbdb4; --accent-ink:#06201e;
+  --err:#ff8a80; --err-bg:#3a1b19; --warn:#f0b955; --warn-bg:#352a10; --ok:#6fd48f; --ok-bg:#15301f; --info:#8db8f0; --info-bg:#172a42;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans)}
+header{padding:20px 16px 8px;max-width:1280px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px;font-weight:600;text-wrap:balance}
+header p{margin:0;color:var(--muted);max-width:70ch}
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;padding:12px 16px 32px;max-width:1280px;margin:0 auto}
+@media (max-width:860px){main{grid-template-columns:minmax(0,1fr)}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+h2{font-size:13px;margin:0;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,.btn{font:500 13px var(--sans);border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 11px;border-radius:6px;cursor:pointer}
+button:hover,.btn:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+textarea{width:100%;min-height:520px;resize:vertical;font:13px/1.5 var(--mono);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px;tab-size:2;white-space:pre;overflow:auto}
+#drop.over textarea{border-color:var(--accent)}
+.tiles{display:flex;gap:8px;flex-wrap:wrap}
+.tile{flex:1 1 90px;border-radius:6px;padding:8px 10px;border:1px solid var(--line)}
+.tile b{display:block;font:500 24px var(--mono);font-variant-numeric:tabular-nums}
+.tile span{font-size:12px;color:var(--muted)}
+.tile.e b{color:var(--err)}.tile.w b{color:var(--warn)}.tile.i b{color:var(--info)}.tile.ok b{color:var(--ok)}
+.finding{border-left:4px solid var(--line);background:var(--bg);border-radius:0 6px 6px 0;padding:9px 12px}
+.finding.error{border-left-color:var(--err);background:var(--err-bg)}
+.finding.warn{border-left-color:var(--warn);background:var(--warn-bg)}
+.finding.info{border-left-color:var(--info);background:var(--info-bg)}
+.finding.ok{border-left-color:var(--ok);background:var(--ok-bg)}
+.finding h3{margin:0;font-size:14px;font-weight:600}
+.tag{font:500 11px var(--mono);text-transform:uppercase;margin-right:6px}
+.error .tag{color:var(--err)}.warn .tag{color:var(--warn)}.info .tag{color:var(--info)}.ok .tag{color:var(--ok)}
+.finding p{margin:3px 0 0;font-size:13.5px}
+.finding .fix{color:var(--ink)}
+.finding .fix::before{content:"Fix: ";font-weight:600}
+code{font:12.5px var(--mono);background:rgba(127,127,127,.15);padding:1px 4px;border-radius:3px}
+.tw{overflow-x:auto}
+.finding button{margin-top:6px;font-size:12px;padding:3px 9px}
+#map svg{width:100%;height:auto;max-height:300px;display:block;background:var(--bg);border:1px solid var(--line);border-radius:6px}
+#map text{font:500 11px var(--mono);fill:var(--ink)}
+table{border-collapse:collapse;width:100%;font:13px var(--mono);font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:500;font-size:12px}
+th:first-child,td:first-child{text-align:left}
+footer{max-width:1280px;margin:0 auto;padding:0 16px 24px;color:var(--muted);font-size:12.5px}
+@media (prefers-reduced-motion:no-preference){.finding{transition:background .2s}}
+</style>
+</head>
+<body>
+<header>
+  <h1>WRF Namelist Doctor</h1>
+  <p>Paste a <code>namelist.input</code>. It checks the mistakes that most often crash <code>real.exe</code> and <code>wrf.exe</code> (nest geometry, time step, dates, physics pairing) and tells you the fix. Everything runs in your browser; nothing is uploaded.</p>
+</header>
+<main>
+  <section id="drop">
+    <h2>namelist.input</h2>
+    <div class="bar">
+      <button id="b-bad" type="button">Load broken example</button>
+      <button id="b-good" type="button">Load clean example</button>
+      <label class="btn" for="file">Open file</label>
+      <input id="file" type="file" hidden>
+    </div>
+    <textarea id="src" spellcheck="false" aria-label="namelist.input contents"></textarea>
+  </section>
+  <section>
+    <div class="bar" style="justify-content:space-between"><h2>Diagnosis</h2><span class="bar"><button id="fixall" class="primary" type="button">Fix all</button><button id="copyfix" type="button">Copy fixed namelist</button><button id="copy" type="button">Copy report</button></span></div>
+    <div class="tiles" id="tiles"></div>
+    <div id="findings" style="display:flex;flex-direction:column;gap:8px"></div>
+    <h2>Nest map (to scale)</h2>
+    <div id="map" class="tw"></div>
+    <h2>Domains</h2>
+    <p id="perf" style="margin:0;font-size:13.5px;color:var(--muted)"></p>
+    <div class="tw"><table id="dom"></table></div>
+  </section>
+  <section id="logsec" style="grid-column:1/-1">
+    <div class="bar" style="justify-content:space-between"><h2>Crash log decoder (rsl.error / wrf.out)</h2><button id="b-log" type="button">Load example log</button></div>
+    <textarea id="log" style="min-height:140px" spellcheck="false" placeholder="Paste the tail of rsl.error.0000 here" aria-label="WRF crash log"></textarea>
+    <div id="logout" style="display:flex;flex-direction:column;gap:8px"></div>
+  </section>
+</main>
+<footer>By Divyanka Keshri, IIT Delhi. Rules follow the WRF user guide recommendations (time_step &le; 6&middot;dx km, (e_we&minus;1) divisible by parent_grid_ratio, nests inside parents, etc.). Treat warnings as guidance, errors as likely crashes.</footer>
+
+<script>
+const BAD = `&time_control
+ run_days = 0, run_hours = 24, run_minutes = 0, run_seconds = 0,
+ start_year = 2024, 2024, start_month = 07, 07, start_day = 10, 10, start_hour = 00, 00, start_minute = 00, 00, start_second = 00, 00,
+ end_year = 2024, 2024, end_month = 07, 07, end_day = 09, 09, end_hour = 00, 00, end_minute = 00, 00, end_second = 00, 00,
+ interval_seconds = 21600,
+ history_interval = 60, 60,
+ input_from_file = .true., .true.,
+ /
+
+&domains
+ time_step = 120,
+ max_dom = 2,
+ e_we = 100, 101,
+ e_sn = 90, 94,
+ e_vert = 45, 40,
+ dx = 12000, 4000,
+ dy = 12000, 4000,
+ grid_id = 1, 2,
+ parent_id = 0, 1,
+ i_parent_start = 1, 3,
+ j_parent_start = 1, 60,
+ parent_grid_ratio = 1, 3,
+ num_metgrid_levels = 34,
+ /
+
+&physics
+ mp_physics = 6, 6,
+ ra_lw_physics = 4, 4,
+ ra_sw_physics = 4, 4,
+ radt = 12, 12,
+ sf_sfclay_physics = 1, 1,
+ bl_pbl_physics = 2, 2,
+ cu_physics = 1, 1,
+ /
+`;
+const GOOD = `&time_control
+ start_year = 2024, 2024, start_month = 07, 07, start_day = 10, 10, start_hour = 00, 00, start_minute = 00, 00, start_second = 00, 00,
+ end_year = 2024, 2024, end_month = 07, 07, end_day = 11, 11, end_hour = 00, 00, end_minute = 00, 00, end_second = 00, 00,
+ interval_seconds = 21600,
+ history_interval = 60, 60,
+ /
+
+&domains
+ time_step = 60,
+ max_dom = 2,
+ e_we = 100, 121,
+ e_sn = 90, 109,
+ e_vert = 45, 45,
+ dx = 12000, 4000,
+ dy = 12000, 4000,
+ grid_id = 1, 2,
+ parent_id = 0, 1,
+ i_parent_start = 1, 30,
+ j_parent_start = 1, 25,
+ parent_grid_ratio = 1, 3,
+ num_metgrid_levels = 34,
+ /
+
+&physics
+ mp_physics = 6, 6,
+ ra_lw_physics = 4, 4,
+ ra_sw_physics = 4, 4,
+ radt = 12, 12,
+ sf_sfclay_physics = 1, 1,
+ bl_pbl_physics = 1, 1,
+ cu_physics = 1, 0,
+ /
+`;
+
+/* ---------- parser ---------- */
+function splitVals(s){
+  const out=[]; const re=/'[^']*'|"[^"]*"|[^,\s]+/g; let m;
+  while((m=re.exec(s))){
+    let t=m[0], rep=1;
+    const r=/^(\d+)\*(.+)$/.exec(t);
+    if(r){rep=+r[1];t=r[2];}
+    let v;
+    if(/^['"]/.test(t)) v=t.slice(1,-1);
+    else if(/^\.(true|t)\.?$/i.test(t)) v=true;
+    else if(/^\.(false|f)\.?$/i.test(t)) v=false;
+    else if(t!==''&&!isNaN(Number(t.replace(/[dD]/,'e')))) v=Number(t.replace(/[dD]/,'e'));
+    else v=t;
+    for(let i=0;i<rep;i++) out.push(v);
+  }
+  return out;
+}
+function parse(text){
+  const groups={}, errors=[]; let cur=null;
+  for(const raw of text.split(/\r?\n/)){
+    const line=raw.replace(/!.*$/,'');
+    const g=/^\s*&(\w+)\s*(.*)$/.exec(line);
+    if(g){ cur=g[1].toLowerCase(); groups[cur]=groups[cur]||''; groups[cur]+=' '+g[2]+'\n'; continue; }
+    if(/^\s*\/\s*$/.test(line)){ cur=null; continue; }
+    if(cur){ groups[cur]+=line+'\n'; }
+  }
+  const vars={}, owner={};
+  for(const [name,body] of Object.entries(groups)){
+    const re=/([A-Za-z_][A-Za-z_0-9]*)\s*(?:\(\s*\d+\s*\))?\s*=/g; const hits=[]; let m;
+    while((m=re.exec(body))) hits.push({k:m[1].toLowerCase(),s:m.index,e:re.lastIndex});
+    hits.forEach((h,i)=>{ const end=i+1<hits.length?hits[i+1].s:body.length;
+      vars[h.k]=splitVals(body.slice(h.e,end)); owner[h.k]=name; });
+  }
+  return {groups:Object.keys(groups),vars,owner};
+}
+
+/* ---------- validation ---------- */
+const sum=a=>a.reduce((x,y)=>x+y,0);
+function validate(text){
+  const P=parse(text), V=P.vars, F=[], T={};
+  const add=(sev,title,detail,fix,fx)=>F.push({sev,title,detail,fix,fx});
+  const nums=k=>(V[k]||[]).filter(x=>typeof x==='number');
+  if(!text.trim()){ return {F:[{sev:'info',title:'Nothing to check yet',detail:'Paste a namelist.input or load an example.'}],doms:[]}; }
+  for(const g of ['time_control','domains']) if(!P.groups.includes(g))
+    add('error',`Missing &${g} section`,`WRF requires the &${g} group.`,`Add a &${g} ... / block.`);
+  if(!/^\s*\/\s*$/m.test(text)) add('error','No closing "/" found','Each group must end with a line containing only "/".','Add "/" on its own line after every group.');
+
+  const md=nums('max_dom')[0];
+  if(!md){ add('error','max_dom not set','real.exe needs max_dom (number of domains).','Add max_dom = 1 (or more) to &domains.'); return {F,doms:[]}; }
+  const need=['e_we','e_sn','e_vert','dx','dy','time_step','interval_seconds'];
+  for(const k of need) if(!V[k]) add('error',`${k} is missing`,`${k} is required in &domains/&time_control.`,`Add ${k} with a value for each domain.`);
+  const perDom=['e_we','e_sn','start_year','start_month','start_day','start_hour','end_year','end_month','end_day','end_hour'];
+  for(const k of perDom) if(V[k]&&V[k].length<md) add('error',`${k} has ${V[k].length} value(s) but max_dom = ${md}`,'Per-domain variables need one entry per domain.',`Provide ${md} comma-separated values for ${k}.`);
+  if(md>1) for(const k of ['parent_id','parent_grid_ratio','i_parent_start','j_parent_start'])
+    if(!V[k]||V[k].length<md) add('error',`${k} needs ${md} values`,'Nest placement is undefined without it.',`List ${md} values (first is for d01, e.g. 1 for ratio/start).`);
+
+  const ewv=nums('e_we'), snv=nums('e_sn'), pid=nums('parent_id'), rat=nums('parent_grid_ratio'), ips=nums('i_parent_start'), jps=nums('j_parent_start');
+  const dx1=nums('dx')[0], dy1=nums('dy')[0], ts=nums('time_step')[0];
+  const dxs=[],tss=[],kmx=[];
+  for(let d=0;d<md;d++){
+    const r=d===0?1:(rat[d]||1), p=d===0?-1:(pid[d]||1)-1;
+    const parentDx = d===0?dx1:(dxs[p]??dx1);
+    dxs[d]= d===0?dx1:parentDx/r;
+    tss[d]= d===0?ts:(tss[p]??ts)/r;
+  }
+  /* dates */
+  const dt=(pre,i)=>{const g=k=>(V[pre+k]||[])[i]; if([g('year'),g('month'),g('day')].some(x=>typeof x!=='number')) return null;
+    return Date.UTC(g('year'),g('month')-1,g('day'),g('hour')||0,g('minute')||0,g('second')||0)};
+  let runSec=null;
+  for(let d=0;d<md;d++){
+    const s=dt('start_',d), e=dt('end_',d);
+    if(s!==null&&e!==null){
+      if(e<=s) add('error',`d0${d+1}: end date is not after start date`,`start ${new Date(s).toISOString().slice(0,16)}Z, end ${new Date(e).toISOString().slice(0,16)}Z.`,'Set end_* later than start_*.');
+      else if(d===0) runSec=(e-s)/1000;
+      if(d>0){const s0=dt('start_',0),e0=dt('end_',0); if(s0!==null&&(s<s0||e>e0)) add('warn',`d0${d+1} time window extends outside d01`,'A nest cannot run when its parent is not running.','Keep nest start/end within d01.');}
+    }
+  }
+  const isec=nums('interval_seconds')[0];
+  if(runSec&&isec&&runSec%isec!==0) add('warn','Run length is not a multiple of interval_seconds',`Run is ${runSec/3600} h, boundary interval is ${isec/3600} h.`,'Choose end time on a boundary-file time.');
+  /* time step */
+  if(ts&&dx1){
+    const lim=6*dx1/1000;
+    if(ts>lim) add('error',`time_step = ${ts} s is too large for dx = ${dx1/1000} km`,`Rule of thumb: time_step <= 6 x dx(km) = ${lim} s. Larger values often give CFL errors ("cfl > 2" crashes).`,`Set time_step = ${Math.floor(lim)} or lower (try ${Math.floor(lim*0.75)}).`,[{k:'time_step',i:0,v:Math.floor(lim*0.75)}]);
+    else if(ts>lim*0.9) add('info','time_step is close to the 6·dx limit',`Limit is ${lim} s; ${ts} s leaves little margin for strong winds.`,`Consider ${Math.floor(lim*0.75)} s if the run blows up.`);
+  }
+  if(dx1&&dy1&&dx1!==dy1) add('warn','dx and dy differ',`dx = ${dx1}, dy = ${dy1}. WRF assumes square cells for most map projections.`,'Use the same value for dx and dy.');
+  /* nests */
+  for(let d=1;d<md;d++){
+    const id=`d0${d+1}`, r=rat[d], p=(pid[d]||1)-1;
+    if(!r||r<1) continue;
+    if(pid[d]>=d+1||pid[d]<1) add('error',`${id}: parent_id = ${pid[d]} is invalid`,'A parent must have a lower domain number than its child.',`Set parent_id for ${id} to a value between 1 and ${d}.`);
+    if(r%2===0) add('warn',`${id}: even parent_grid_ratio (${r})`,'Odd ratios (3, 5) align cell centres with the parent and are strongly recommended.','Use ratio 3 (or 5).');
+    for(const [k,a] of [['e_we',ewv],['e_sn',snv]]){
+      const n=a[d]; if(typeof n!=='number') continue;
+      if((n-1)%r!==0){ const lo=r*Math.floor((n-1)/r)+1, hi=r*Math.ceil((n-1)/r)+1;
+        add('error',`${id}: ${k} = ${n} breaks the nest rule`,`(${k} - 1) must be divisible by parent_grid_ratio = ${r}; (${n} - 1) / ${r} = ${((n-1)/r).toFixed(2)}.`,`Use ${k} = ${lo} or ${hi}.`,[{k,i:d,v:(n-lo<=hi-n)?lo:hi}]);}
+    }
+    if(dxs[d]&&nums('dx')[d]!==undefined&&Math.abs(nums('dx')[d]-dxs[d])>1)
+      add('warn',`${id}: dx = ${nums('dx')[d]} does not match parent dx / ratio`,`Parent ${p+1} dx / ${r} = ${dxs[d]}.`,`Set dx(${d+1}) = ${dxs[d]} (WRF derives it from the parent anyway).`,[{k:'dx',i:d,v:dxs[d]},{k:'dy',i:d,v:dxs[d]}]);
+    for(const [k,a,pa,st] of [['i',ewv,ewv,ips],['j',snv,snv,jps]]){
+      const n=a[d], pn=pa[p], s=st[d]; if([n,pn,s].some(x=>typeof x!=='number')) continue;
+      const span=(n-1)/r, right=pn-s-span, left=s-1;
+      const ax=k==='i'?'west-east':'south-north';
+      if(s<1) add('error',`${id}: ${k}_parent_start = ${s} must be >= 1`,'It is a 1-based index into the parent grid.',`Set ${k}_parent_start >= 5.`);
+      else if(right<0) add('error',`${id}: nest sticks out of its parent (${ax})`,`Nest spans ${span} parent cells starting at ${s}; parent has ${pn-1} cells, so it overshoots by ${-right}.`,`Lower ${k}_parent_start to ${s+right} or shrink the nest.`,[{k:k+'_parent_start',i:d,v:Math.max(1,s+right)}]);
+      else if(left<4||right<4) add('warn',`${id}: nest is within 4 parent cells of the parent edge (${ax})`,`Margins: ${left} cells on the low side, ${right} on the high side. The boundary relaxation zone distorts the nest.`,'Keep at least 5 parent cells of margin on every side.');
+    }
+  }
+  /* e_vert */
+  const ev=nums('e_vert'); if(ev.length>1&&ev.slice(0,md).some(x=>x!==ev[0])) add('error','e_vert differs between domains',`Values: ${ev.slice(0,md).join(', ')}. All domains must share the same number of levels.`,`Use e_vert = ${ev[0]} for every domain.`,ev.slice(0,md).map((_,i)=>({k:'e_vert',i,v:ev[0]})));
+  /* physics */
+  const phys=(k,d)=>{const a=nums(k); return a.length?a[Math.min(d,a.length-1)]:undefined;};
+  for(let d=0;d<md;d++){
+    const bl=phys('bl_pbl_physics',d), sf=phys('sf_sfclay_physics',d), cu=phys('cu_physics',d);
+    const map={1:[1,91],2:[2],5:[5,1],4:[4],7:[7],8:[1,5]};
+    if(bl&&sf&&map[bl]&&!map[bl].includes(sf)) add('warn',`d0${d+1}: bl_pbl_physics = ${bl} is paired with sf_sfclay_physics = ${sf}`,'PBL schemes are designed for a matching surface-layer scheme (YSU=1 with 1, MYJ=2 with 2, MYNN=5 with 5).',`Set sf_sfclay_physics = ${map[bl][0]}.`,[{k:'sf_sfclay_physics',i:d,v:map[bl][0]}]);
+    if(cu>0&&dxs[d]&&dxs[d]<=4000) add('warn',`d0${d+1}: cumulus scheme on a ${dxs[d]/1000} km grid`,'At 4 km and finer, convection is (mostly) resolved; a cumulus scheme double-counts rain.','Set cu_physics = 0 for this domain.',[{k:'cu_physics',i:d,v:0}]);
+    if(cu===0&&dxs[d]&&dxs[d]>=10000) add('info',`d0${d+1}: no cumulus scheme at ${dxs[d]/1000} km`,'Convection is not resolved at this grid size.','Consider cu_physics = 1, 2 or 6 on this domain.');
+  }
+  const radt=phys('radt',0); if(radt&&dx1&&radt<dx1/1000/2) add('info',`radt = ${radt} min is more frequent than needed`,`Guideline is radt about dx in km (${dx1/1000}). Radiation is expensive.`,`Set radt = ${Math.round(dx1/1000)}.`,[{k:'radt',i:0,v:Math.round(dx1/1000)}]);
+  if(!V.num_metgrid_levels) add('info','num_metgrid_levels not set','real.exe must match the level count in your met_em files.','Check with ncdump -h met_em.d01*.nc | grep num_metgrid_levels.');
+  const hi=nums('history_interval'); void hi;
+  const ox=[],oy=[]; for(let d=0;d<md;d++){ if(d===0){ox[0]=0;oy[0]=0;} else {const p=(pid[d]||1)-1; ox[d]=(ox[p]||0)+((ips[d]||1)-1)*dxs[p]/1000; oy[d]=(oy[p]||0)+((jps[d]||1)-1)*dxs[p]/1000;} }
+  const doms=[]; for(let d=0;d<md;d++) doms.push({ox:ox[d],oy:oy[d],par:d===0?-1:(pid[d]||1)-1,d:d+1,parent:d===0?'-':pid[d],ratio:d===0?1:rat[d],e_we:ewv[d],e_sn:snv[d],dx:dxs[d],ts:tss[d],pts:(ewv[d]-1)*(snv[d]-1)||0,w:(ewv[d]-1)*dxs[d]/1000,h:(snv[d]-1)*dxs[d]/1000});
+  let perf=''; try{
+    const rows=doms.map(d=>{const nx=ewv[d.d-1]-1,ny=snv[d.d-1]-1; return {d:d.d,max:Math.floor(nx/10)*Math.floor(ny/10),eff:Math.max(1,Math.floor(nx/25)*Math.floor(ny/25))};});
+    const lim=rows.reduce((a,b)=>b.max<a.max?b:a), eff=rows.reduce((a,b)=>b.eff<a.eff?b:a);
+    const steps=runSec&&ts?Math.round(runSec/ts):0, cells=doms.reduce((a,d)=>a+d.pts*(ev[0]||1),0);
+    perf=`Core limit: d0${lim.d} allows at most about ${lim.max} MPI ranks (10x10 cells per patch); about ${eff.eff} stays efficient (25x25 per patch). `+(steps?`d01 takes ${steps.toLocaleString()} steps for ${(runSec/3600)} h of simulation. `:'')+`Total grid volume: ${(cells/1e6).toFixed(2)} million cells.`;
+  }catch(e){}
+  if(!F.length) F.push({sev:'ok',title:'No problems found',detail:'All checks passed. Real data issues (missing met_em files, bad levels) are not detectable from the namelist.',fix:null});
+  const order={error:0,warn:1,info:2,ok:3}; F.sort((a,b)=>order[a.sev]-order[b.sev]);
+  return {F,doms,perf};
+}
+const LOGRULES=[
+ [/cfl|points exceeded v_cfl|exceeded .*cfl/i,'CFL violation: the model went numerically unstable','Winds exceeded what time_step can resolve (common in steep terrain or strong jets).','Lower time_step (try 4-5 x dx km), set w_damping = 1, use smaller epssm/ diff_6th_opt = 2, and check terrain smoothing.'],
+ [/Segmentation fault|forrtl: severe \(174\)|SIGSEGV|Invalid memory reference/i,'Segmentation fault','Usually the stack limit is too low or a node ran out of memory, sometimes after a CFL blow-up.','Run "ulimit -s unlimited" in the job script, request more memory per node, and check earlier lines for cfl messages.'],
+ [/oom|out of memory|killed by signal 9|Cannot allocate memory/i,'Out of memory','The job exceeded the memory of its nodes.','Use fewer ranks per node, request more nodes, reduce e_we/e_sn or e_vert.'],
+ [/Could not open (met_em|file)|met_em.*(not found|No such file)|NetCDF error.*No such file|wrfinput_d0\d.*No such file/i,'Input file missing','real.exe/wrf.exe cannot find met_em or wrfinput/wrfbdy files for the requested dates.','Check start/end dates and interval_seconds against the met_em file names, and rerun geogrid/ungrib/metgrid. Confirm paths in the job script.'],
+ [/num_metgrid_levels|Mismatch between namelist and input|wrf_get_dom_ti_integer returned error|dimension.*mismatch/i,'Namelist does not match the input files','The namelist differs from the one used to generate met_em or wrfinput files.','Make num_metgrid_levels, e_we, e_sn, e_vert, dx and parent settings identical to what real.exe used. Rerun real.exe after any change.'],
+ [/\$?namelist.*(read|error)|Fortran runtime error.*namelist|invalid .*namelist|forrtl: severe \(24\)|end-of-file/i,'Namelist syntax or variable problem','A variable name is misspelled, in the wrong group, or a group is not closed.','Check spelling and group (&physics, &dynamics ...), commas between values, and a closing "/" on every group. Paste the namelist in the checker above.'],
+ [/patch.*too small|domain.*too small|decomposition|DM_TASKS|insufficient number of grid/i,'Too many MPI ranks for the domain','Each rank needs a patch of roughly 10x10 grid cells or more.','Use fewer ranks (see the core limit under the domain table) or enlarge the domain.'],
+ [/bdy_width|spec_bdy_width|relax zone/i,'Boundary-zone problem','A nest or domain is too close to the boundary for spec_bdy_width.','Increase the margin between nest and parent edge to at least 5 parent cells.'],
+ [/Timing mismatch|start date|Time in file.*does not match|Domain.*start.*end/i,'Date mismatch','Start/end dates do not match the input files or restart.','Match start_* and end_* to the first/last met_em or wrfinput time, and check interval_seconds.'],
+ [/sf_surface_physics|landuse|num_land_cat|NUM_LAND_CAT|vegetation/i,'Land-use / surface scheme mismatch','Land surface scheme or landuse categories differ from geogrid output.','Check num_land_cat in the namelist and that sf_surface_physics matches the geogrid LANDUSE data (e.g. MODIS 21 vs 24 classes).']
+];
+function diagnoseLog(text){
+  if(!text.trim()) return [];
+  const out=[]; for(const [re,t,w,f] of LOGRULES) if(re.test(text)) out.push({sev:'error',title:t,detail:w,fix:f});
+  const m=/-+\s*FATAL CALLED\s*-+\s*\n(?:[^\n]*\n)?\s*(?:FATAL\s+CALLED\s+FROM[^\n]*\n)?\s*([^\n]+)/i.exec(text);
+  const lines=text.split(/\r?\n/); const i=lines.findIndex(l=>/FATAL CALLED/i.test(l));
+  if(i>=0){ const msg=lines.slice(i+1,i+4).filter(l=>l.trim()&&!/^-+$/.test(l.trim())).join(' ').trim(); out.unshift({sev:'info',title:'WRF reported a fatal error',detail:msg||'See rsl.error.0000 for the message.',fix:null}); }
+  if(!out.length) out.push({sev:'info',title:'No known pattern matched',detail:'Look at the last 20 lines of rsl.error.0000 (the lowest-numbered rank that failed) and search the exact message.',fix:null});
+  return out;
+}
+const LOGSAMPLE=`d01 2024-07-10_00:12:00  3 points exceeded v_cfl = 2. in domain d01
+d01 2024-07-10_00:12:00  Max   W: 31.2 ...
+d01 2024-07-10_00:13:00  4 points exceeded cfl=2 in domain d01 at time 2024-07-10_00:13:00
+forrtl: severe (174): SIGSEGV, segmentation fault occurred
+-------------- FATAL CALLED ---------------
+ FATAL CALLED FROM FILE:  <stdin>  LINE:     123
+ NaN in input or CFL blow-up
+-------------------------------------------`;
+function setVar(text,key,idx,val){
+  const re=new RegExp('(\\b'+key+'\\s*=\\s*)([^=\\n/]*?)(?=\\s+[A-Za-z_]\\w*\\s*=|[ \\t]*(?:\\n|$))','i');
+  const m=re.exec(text); if(!m) return text;
+  const toks=m[2].match(/'[^']*'|"[^"]*"|[^,\s]+/g)||[];
+  while(toks.length<=idx) toks.push(toks.length?toks[toks.length-1]:String(val));
+  toks[idx]=String(val);
+  return text.slice(0,m.index)+m[1]+toks.join(', ')+text.slice(m.index+m[0].length);
+}
+function applyFx(text,fx){ for(const f of fx||[]) text=setVar(text,f.k,f.i,f.v); return text; }
+/*DOM*/
+if(typeof document!=='undefined'){
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const md=s=>esc(s).replace(/`([^`]+)`/g,'<code>$1</code>');
+let last=null;
+function render(){
+  const r=validate($('src').value); last=r;
+  const c={error:0,warn:0,info:0}; r.F.forEach(f=>{if(c[f.sev]!==undefined)c[f.sev]++;});
+  const bad=c.error===0&&c.warn===0&&r.F.every(f=>f.sev!=='info'||true)&&r.F[0]?.sev==='ok';
+  $('tiles').innerHTML=bad?'<div class="tile ok"><b>OK</b><span>no issues</span></div>':
+    `<div class="tile e"><b>${c.error}</b><span>errors</span></div><div class="tile w"><b>${c.warn}</b><span>warnings</span></div><div class="tile i"><b>${c.info}</b><span>notes</span></div>`;
+  const lab={error:'Error',warn:'Warning',info:'Note',ok:'Pass'};
+  $('findings').innerHTML=r.F.map((f,i)=>`<div class="finding ${f.sev}"><h3><span class="tag">${lab[f.sev]}</span>${md(f.title)}</h3><p>${md(f.detail)}</p>${f.fix?`<p class="fix">${md(f.fix)}</p>`:''}${f.fx?`<button type="button" data-i="${i}">Apply fix</button>`:''}</div>`).join('');
+  $('findings').querySelectorAll('button[data-i]').forEach(b=>b.onclick=()=>{$('src').value=applyFx($('src').value,r.F[+b.dataset.i].fx);render();});
+  $('fixall').disabled=!r.F.some(f=>f.fx&&(f.sev==='error'||f.sev==='warn'));
+  drawMap(r.doms); $('perf').textContent=r.perf||'';
+  const rows=r.doms.map(d=>`<tr><td>d0${d.d}</td><td>${d.parent}</td><td>${d.ratio}</td><td>${d.e_we}&times;${d.e_sn}</td><td>${d.dx?d.dx/1000:'?'} km</td><td>${d.ts?+d.ts.toFixed(1):'?'} s</td><td>${Math.round(d.w)}&times;${Math.round(d.h)} km</td><td>${d.pts.toLocaleString()}</td></tr>`).join('');
+  $('dom').innerHTML=`<thead><tr><th>Domain</th><th>Parent</th><th>Ratio</th><th>e_we&times;e_sn</th><th>dx</th><th>Eff. step</th><th>Extent</th><th>Cells</th></tr></thead><tbody>${rows||'<tr><td colspan="8">No domains parsed.</td></tr>'}</tbody>`;
+}
+function drawMap(doms){
+  const el=$('map'); const ok=doms.filter(d=>d.w>0&&d.h>0);
+  if(!ok.length){el.innerHTML='';return;}
+  const W=ok[0].w,H=ok[0].h,pad=W*0.04, cols=['--accent','--info','--warn','--ok'];
+  let s=`<svg viewBox="${-pad} ${-pad} ${W+2*pad} ${H+2*pad}" role="img" aria-label="Domain layout to scale">`;
+  ok.forEach((d,i)=>{ const x=d.ox, y=H-d.oy-d.h; const par=ok.find(q=>q.d===d.par+1);
+    const out=par&&(x<par.ox-0.01||d.oy<par.oy-0.01||x+d.w>par.ox+par.w+0.01||d.oy+d.h>par.oy+par.h+0.01);
+    const c=out?'--err':cols[i%4];
+    s+=`<rect x="${x}" y="${y}" width="${d.w}" height="${d.h}" fill="var(${c})" fill-opacity=".14" stroke="var(${c})" stroke-width="${W/300}" ${out?`stroke-dasharray="${W/60}"`:''}/><text x="${x+W/80}" y="${y+W/28}" style="font-size:${W/30}px">d0${d.d} ${d.dx/1000} km${out?' (outside parent)':''}</text>`;});
+  el.innerHTML=s+`</svg>`;
+}
+$('fixall').onclick=()=>{let t=$('src').value; for(let k=0;k<4;k++){const r=validate(t); const fx=r.F.filter(f=>(f.sev==='error'||f.sev==='warn')&&f.fx).flatMap(f=>f.fx); if(!fx.length)break; t=applyFx(t,fx);} $('src').value=t; render();};
+$('src').addEventListener('input',render);
+$('b-bad').onclick=()=>{$('src').value=BAD;render();};
+$('b-good').onclick=()=>{$('src').value=GOOD;render();};
+$('file').onchange=e=>{const f=e.target.files[0]; if(!f)return; f.text().then(t=>{$('src').value=t;render();});};
+const dz=$('drop');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('over');const f=e.dataTransfer.files[0]; if(f) f.text().then(t=>{$('src').value=t;render();});});
+$('copy').onclick=async()=>{
+  const t='WRF Namelist Doctor report\n\n'+last.F.map(f=>`[${f.sev.toUpperCase()}] ${f.title}\n  ${f.detail}${f.fix?'\n  Fix: '+f.fix:''}`).join('\n\n');
+  try{await navigator.clipboard.writeText(t);$('copy').textContent='Copied';}catch(e){$('copy').textContent='Copy blocked';}
+  setTimeout(()=>$('copy').textContent='Copy report',1500);
+};
+function renderLog(){
+  const lab={error:'Likely cause',info:'Note'};
+  $('logout').innerHTML=diagnoseLog($('log').value).map(f=>`<div class="finding ${f.sev}"><h3><span class="tag">${lab[f.sev]||f.sev}</span>${md(f.title)}</h3><p>${md(f.detail)}</p>${f.fix?`<p class="fix">${md(f.fix)}</p>`:''}</div>`).join('');
+}
+$('log').addEventListener('input',renderLog);
+$('b-log').onclick=()=>{$('log').value=LOGSAMPLE;renderLog();};
+$('copyfix').onclick=async()=>{try{await navigator.clipboard.writeText($('src').value);$('copyfix').textContent='Copied';}catch(e){$('copyfix').textContent='Copy blocked';} setTimeout(()=>$('copyfix').textContent='Copy fixed namelist',1500);};
+$('log').value=LOGSAMPLE; renderLog();
+$('src').value=BAD; render();
+}
+</script>
+</body>
+</html>
